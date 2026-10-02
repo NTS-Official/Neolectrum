@@ -125,12 +125,3 @@ MC 26.1 用 `net.minecraft.client.renderer.ProjectionMatrixBuffer` 统一承载�
 
 **注意**：只有抖动、还没有 TAA resolve 时，画面看起来会**更差**（轻微振动）——这是阶段 2 的验收
 信号，不是回归，所以默认关。
-
-### 本环境的验证边界
-
-沙箱下 **Gradle 无法启动**：wrapper 要在 `C:\Users\astra\.gradle\wrapper\dists\...` 取锁，该路径在工作区
-之外被拒绝（`FileNotFoundException ... 拒绝访问`），网络也不可达。所以 JVM 侧**编译与运行必须由开发者
-这边做**。已对着反编译源码逐个核对的 API：`Projection` 的包名、`Projection#getMatrix(Matrix4f)` 的可见性、
-`Window#getWidth/getHeight` 返回 `framebufferWidth/Height`、`RenderSystem.PROJECTION_MATRIX_UBO_SIZE`、
-`RenderSystem#getDevice().createCommandEncoder().writeToBuffer(...)`，以及 mod 侧
-`WgpuCommandEncoder.writeToBuffer` 用的是 `data.remaining()`（64 字节正好是 UBO 大小）。

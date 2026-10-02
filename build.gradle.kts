@@ -105,16 +105,44 @@ repositories {
 // ---------------------------------------------------------------------------
 // Native library packaging
 //
-// The previous (1.21.1) revision pulled the JNI bridge in through the
-// `fr.stardustenterprises.rust.importer` plugin, which is not available for the
-// NeoForge 26.1 toolchain. The native library is now picked straight out of the
-// Rust workspace output, and the task degrades to a no-op until it has been
-// built with `cargo build --release`.
+// The JNI bridge is not built here. It is the output of the Rust engine, which lives in its own
+// repository - a checkout *beside* this one by default, `../wgpu-mc-neo` - where
+// `cargo build --release` writes `rust/target/release/wgpu_mc_jni.<ext>`. This task takes that
+// binary, and the PDB the same build leaves next to it on Windows, out of the engine's output
+// directory and into this module's resources, which is how they reach the jar.
+//
+// The engine checkout is looked for in this order, so a machine that keeps it somewhere else - a CI
+// job, a second clone, a worktree - only has to say where:
+//
+//   -Pwgpu_mc_rust_dir=D:/engines/wgpu-mc-neo/rust     (or WGPU_MC_RUST_DIR in the environment)
+//
+// With no built engine there, `copyNatives` is skipped with a warning instead of failing the build:
+// the jar then carries no natives, which is a jar for everyone who has the library from somewhere
+// else, and one that cannot run the renderer itself.
 // ---------------------------------------------------------------------------
-val rustProjectDir = rootProject.layout.projectDirectory.dir("rust")
-val rustReleaseDir = rustProjectDir.dir("target/release")
+
+/** This repository's root, and the engine checkout the build assumes when nothing says otherwise. */
+val modDirectory = layout.projectDirectory.asFile
+val defaultEngineDirectory = File(modDirectory, "../wgpu-mc-neo/rust")
+
+/**
+ * A path from a property or from the environment, resolved the way a build file names one: an
+ * absolute path is taken as it is, a relative one against this repository's root rather than
+ * against the working directory Gradle happened to be started from.
+ */
+fun engineDirectory(path: String): File {
+	val file = File(path)
+	return if (file.isAbsolute) file else File(modDirectory, path)
+}
+
+val rustProjectDir = providers.gradleProperty("wgpu_mc_rust_dir")
+	.orElse(providers.environmentVariable("WGPU_MC_RUST_DIR"))
+	.map { engineDirectory(it) }
+	.orElse(defaultEngineDirectory)
+
+val rustReleaseDir = rustProjectDir.map { File(it, "target/release") }
 val nativeLibraryFileName = System.mapLibraryName("wgpu_mc_jni")
-val nativeLibrary = rustReleaseDir.file(nativeLibraryFileName)
+val nativeLibrary = rustReleaseDir.map { File(it, nativeLibraryFileName) }
 
 // The PDB the release build writes beside the library, when the profile asks for one (`debug =
 // "line-tables-only"` in `rust/Cargo.toml`). It rides along into this module's resources, and into
@@ -122,12 +150,12 @@ val nativeLibrary = rustReleaseDir.file(nativeLibraryFileName)
 // directory, and PIX resolves a timing capture's function names through the PDB that sits *there* - a
 // debugger looks for symbols beside the module, not inside the mod's jar. Absent when the Rust build
 // produced none, which is not an error.
-val nativeSymbols = rustReleaseDir.file(nativeLibraryFileName.substringBeforeLast('.') + ".pdb")
+val nativeSymbols = rustReleaseDir.map { File(it, nativeLibraryFileName.substringBeforeLast('.') + ".pdb") }
 
 val copyNatives = tasks.register<Copy>("copyNatives") {
-	description = "Copies the freshly built Rust JNI bridge into this module's resources."
+	description = "Copies the JNI bridge built by the Rust engine checkout into this module's resources."
 	group = "build"
-	onlyIf { nativeLibrary.asFile.exists() }
+
 	from(nativeLibrary) {
 		into("assets/$modId/natives")
 	}
@@ -135,6 +163,24 @@ val copyNatives = tasks.register<Copy>("copyNatives") {
 		into("assets/$modId/natives")
 	}
 	into(layout.buildDirectory.dir("generated/natives"))
+
+	onlyIf("the Rust engine has been built") {
+		val library = nativeLibrary.get()
+
+		if (library.isFile) {
+			true
+		} else {
+			logger.warn(
+				"wgpu-mc: no native library at {} - skipping copyNatives, so this jar carries no " +
+					"natives and cannot run the renderer. Build it with `cargo build --release` in " +
+					"{}, or point this build at the checkout that has it: -Pwgpu_mc_rust_dir=<path> " +
+					"(or the WGPU_MC_RUST_DIR environment variable).",
+				library.path,
+				rustProjectDir.get().path
+			)
+			false
+		}
+	}
 }
 
 sourceSets.main {
@@ -277,8 +323,8 @@ tasks.matching { it.name.startsWith("run") }.configureEach {
 // per run instead of from here, because the launcher's JVM arguments turned out to be one more
 // thing that can silently not arrive:
 //
-//   gradlew :wgpu-mc-neoforge:runClient -Dwgpu_mc.diagnostics=true     # or
-//   New-Item neoforge/runs/client/wgpu-dump-frames                     # no launcher support needed
+//   gradlew runClient -Dwgpu_mc.diagnostics=true     # or
+//   New-Item runs/client/wgpu-dump-frames            # no launcher support needed
 //
 // The marker file is the one that works everywhere, so it is the documented one.
 
