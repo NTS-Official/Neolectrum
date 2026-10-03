@@ -56,6 +56,16 @@ jobs:
         run: cargo build --release
         working-directory: wgpu-mc-neo/rust
 
+      # The wrapper is committed with its executable bit (`100755`), because that is the only thing
+      # that makes `./gradlew` runnable on a Linux runner - but this repository is developed on
+      # Windows, where `core.filemode=false` means a re-added `gradlew` silently comes back as
+      # `100644`, and the first `./gradlew` then dies with `Permission denied` and exit code 126.
+      # That is what happened here, so the mode is set again at the one point a checkout can be
+      # asked what it got.
+      - name: make the gradle wrapper executable
+        if: runner.os != 'Windows'
+        run: chmod +x gradlew
+
       - name: validate gradle wrapper
         uses: gradle/wrapper-validation-action@v2
 
