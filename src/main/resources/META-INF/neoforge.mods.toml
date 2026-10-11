@@ -1,9 +1,8 @@
-modLoader="javafml"
-loaderVersion="${loader_version_range}"
+modLoader="kotlinforforge"
+loaderVersion="${kff_version_range}"
 license="${mod_license}"
 issueTrackerURL="https://github.com/NTS-Official/Neolectrum/issues"
 updateJSONURL="https://raw.githubusercontent.com/NTS-Official/Neolectrum/main/updates.json"
-
 [[mods]]
 modId="${mod_id}"
 version="${mod_version}"
@@ -36,3 +35,10 @@ type="required"
 versionRange="${minecraft_version_range}"
 ordering="NONE"
 side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="kotlinforforge"
+type="required"
+versionRange="${kff_version_range}"
+ordering="NONE"
+side="CLIENT"
