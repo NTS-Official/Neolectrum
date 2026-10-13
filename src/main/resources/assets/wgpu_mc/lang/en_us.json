@@ -81,9 +81,9 @@
   "wgpu_mc.option.terrain_no_cull.tooltip": "Draw every pipeline the render graph builds without back-face culling, so the picture stops depending on the winding at all. This is a diagnostic for a picture that is inside out: with both faces rasterized, \"the winding is wrong\" and \"the depth test keeps the wrong end\" stop looking the same.\n\nIt is not a mode to play with: every quad gets a second copy, shaded with the far side's lighting. Applying it rebuilds the graph's pipelines.",
   "wgpu_mc.option.terrain_greater_depth": "Terrain with the depth test reversed",
   "wgpu_mc.option.terrain_greater_depth.tooltip": "Draw every pipeline the render graph builds with the depth test the opposite way round, so the faces behind are the ones kept. The other half of the pair above, and the other reading of a picture whose front faces are missing.\n\nDepth writes are unchanged - the test is what moved - so the picture is the far side of everything the camera can see through. Applying it rebuilds the graph's pipelines.",
-  "wgpu_mc.option.window_mode": "Window mode",
-  "wgpu_mc.option.window_mode.tooltip": "How the window fills the screen. **Exclusive** is a real display mode switch, the same thing Minecraft's own Fullscreen does; **Borderless** covers the monitor with no decorations but does not change the display mode, which is what to pick if you alt-tab; **Windowed** is a window.\n\nThe game's own fullscreen key (F11 by default) toggles between Windowed and whichever mode is chosen here, so the key keeps working.",
-  "wgpu_mc.option.window_mode.exclusive": "Exclusive",
-  "wgpu_mc.option.window_mode.borderless": "Borderless",
-  "wgpu_mc.option.window_mode.off": "Windowed"
+  "wgpu_mc.option.fullscreen_mode": "Fullscreen mode",
+  "wgpu_mc.option.fullscreen_mode.tooltip": "How the window fills the screen. **Exclusive** is a real display mode switch, the same thing Minecraft's own Fullscreen does; **Borderless** covers the monitor with no decorations but does not change the display mode, which is what to pick if you alt-tab; **Off** is a window.\n\nThe game's own fullscreen key (F11 by default) toggles between Off and whichever mode is chosen here, so the key keeps working.",
+  "wgpu_mc.option.fullscreen_mode.exclusive": "Exclusive",
+  "wgpu_mc.option.fullscreen_mode.borderless": "Borderless",
+  "wgpu_mc.option.fullscreen_mode.off": "Off"
 }

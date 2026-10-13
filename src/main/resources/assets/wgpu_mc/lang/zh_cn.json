@@ -81,9 +81,9 @@
   "wgpu_mc.option.terrain_no_cull.tooltip": "渲染图构建的每条管线都不再剔除背面，于是画面与顶点绕序完全无关。这是给「画面里外翻」准备的诊断开关：两个面都画出来之后，「绕序反了」和「深度测试取错了端点」才区分得开。\n\n它不是能拿来玩的模式：每个四边形都有第二份副本，并用背面的光照着色。应用它会重建渲染图的管线。",
   "wgpu_mc.option.terrain_greater_depth": "地形深度反向",
   "wgpu_mc.option.terrain_greater_depth.tooltip": "使渲染图构建的每条管线都用相反的深度比较。",
-  "wgpu_mc.option.window_mode": "窗口模式",
-  "wgpu_mc.option.window_mode.tooltip": "在“全屏专用”、“无边框窗口”与“窗口化”之间切换。",
-  "wgpu_mc.option.window_mode.exclusive": "全屏专用",
-  "wgpu_mc.option.window_mode.borderless": "无边框窗口",
-  "wgpu_mc.option.window_mode.off": "窗口化"
+  "wgpu_mc.option.fullscreen_mode": "全屏模式",
+  "wgpu_mc.option.fullscreen_mode.tooltip": "在“全屏专用”、“无边框窗口”与“关闭”之间切换。",
+  "wgpu_mc.option.fullscreen_mode.exclusive": "全屏专用",
+  "wgpu_mc.option.fullscreen_mode.borderless": "无边框窗口",
+  "wgpu_mc.option.fullscreen_mode.off": "关闭"
 }

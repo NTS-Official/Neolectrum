@@ -72,9 +72,9 @@ object DisplayMode {
 
         /** Where this mode's own name is translated - the row is on the Electrum page. */
         fun langKey(): String = when (this) {
-            EXCLUSIVE -> "wgpu_mc.option.window_mode.exclusive"
-            BORDERLESS -> "wgpu_mc.option.window_mode.borderless"
-            OFF -> "wgpu_mc.option.window_mode.off"
+            EXCLUSIVE -> "wgpu_mc.option.fullscreen_mode.exclusive"
+            BORDERLESS -> "wgpu_mc.option.fullscreen_mode.borderless"
+            OFF -> "wgpu_mc.option.fullscreen_mode.off"
         }
 
         companion object {

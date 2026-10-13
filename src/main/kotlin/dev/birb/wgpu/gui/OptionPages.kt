@@ -214,7 +214,7 @@ class OptionPages : Iterable<OptionPages.Page> {
         // caption, so a player finds it where they always did.
         page.add(EnumOption.Builder(DisplayMode.Mode::class.java)
             .setName(Component.translatable("options.fullscreen"))
-            .setTooltip(Component.translatable("wgpu_mc.option.window_mode.tooltip"), false)
+            .setTooltip(Component.translatable("wgpu_mc.option.fullscreen_mode.tooltip"), false)
             .setAccessors(
                 { DisplayMode.Mode.current() },
                 { mode -> WgpuNative.setFullscreenMode(mode.ordinal) }
