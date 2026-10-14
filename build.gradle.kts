@@ -25,9 +25,24 @@ val neoforgeKotlinVersion = providers.gradleProperty("neoforge_kotlin_version").
 val modId = "wgpu_mc"
 val modName = "Neolectrum"
 val modLicense = "MPLv2"
-val loaderVersionRange = "[3,)"
-// Minecraft 26.1 is the new stable modding baseline; 26.2 is the next feature release.
-val minecraftVersionRange = "[$neoforgeMinecraftVersion,$neoforgeMinecraftVersion.999)"
+// FML ships as part of NeoForge, and the 21.1 line carries FML 4.x. (26.1 carries FML 3.x, which is
+// why the 26.1 branch asks for `[3,)` - the number is the loader's, not this mod's.)
+val loaderVersionRange = "[4,)"
+// 1.21.1 is the last patch of the 1.21 line this port targets; 1.21.2 moved Minecraft to Java 22.
+val minecraftVersionRange = "[1.21,1.22)"
+// The KFF line that matches the loader, kept in one place because three things have to agree on it:
+// the dependency below, the `loaderVersion` in `neoforge.mods.toml`, and the `kotlinforforge`
+// requirement it declares. It is derived from `kff_version_range` - the range `[5.10.0,5.99.999)`
+// names the version to build against as its lower bound - so the two can never disagree.
+//
+// Declared here rather than beside the `dependencies` block that uses it: a Gradle Kotlin script's
+// top-level `val`s are initialised in source order, and a `val` read from above its own declaration
+// is `null` at that point - which is what `kotlinforforge-neoforge:null` in the first build of this
+// branch was.
+val kffVersion = providers.gradleProperty("kff_version_range")
+	.get()
+	.removePrefix("[")
+	.substringBefore(",")
 
 group = neoforgeMavenGroup
 version = neoforgeModVersion
@@ -47,14 +62,18 @@ sourceSets.main {
 
 java {
 	toolchain {
-		// Minecraft 26.1 moved to Java 25.
-		languageVersion.set(JavaLanguageVersion.of(25))
+		// Minecraft 1.21.1 is the last release that runs on Java 21: 1.21.2 moved to Java 22, and
+		// NeoForge followed with its 21.4 line. This is also the reason `WmNative` cannot use the
+		// `java.lang.foreign` API the 26.1 branch binds the engine's C ABI with - on 21 it is a
+		// preview API, and a mod cannot ask a launcher to pass `--enable-preview`. The engine's
+		// `all-jni` branch exports the same functions over JNI instead.
+		languageVersion.set(JavaLanguageVersion.of(21))
 	}
 	withSourcesJar()
 }
 
 kotlin {
-	jvmToolchain(25)
+	jvmToolchain(21)
 }
 
 // ---------------------------------------------------------------------------
@@ -92,12 +111,23 @@ configurations.named("runtimeClasspath") {
 
 dependencies {
 	implementation("net.neoforged:neoforge:$neoforgeNeoVersion")
+
+	// `neoforge.mods.toml` declares `modLoader="kotlinforforge"`, so FML hands this mod to Kotlin
+	// for Forge's language loader instead of its own, and KFF has to be on the classpath for a
+	// development run to reach the title screen. The 26.1 branch does not list it because KFF 6.x
+	// is pulled in by the runtime there; on 1.21.1 nothing else does.
+	implementation("thedarkcolour:kotlinforforge-neoforge:$kffVersion")
 }
 
 repositories {
 	maven {
 		name = "NeoForged"
 		setUrl("https://maven.neoforged.net/releases")
+	}
+	maven {
+		// Kotlin for Forge is not published to Maven Central or to NeoForged's maven.
+		name = "Kotlin for Forge"
+		setUrl("https://thedarkcolour.github.io/KotlinForForge/")
 	}
 	mavenCentral()
 }
@@ -211,7 +241,11 @@ tasks.named<ProcessResources>("processResources") {
 		"mod_id" to modId,
 		"mod_name" to modName,
 		"mod_license" to modLicense,
-		"mod_version" to neoforgeModVersion
+		"mod_version" to neoforgeModVersion,
+		// `modLoader="kotlinforforge"` means the loader named here is KFF's, not FML's, and FML
+		// refuses to load a mod whose declared loader version range it cannot satisfy. The range
+		// describes the 1.21.1 line of KFF (5.x); the 26.1 branch asks for [6.3.0,6.99.999).
+		"kff_version_range" to providers.gradleProperty("kff_version_range").get()
 	)
 	inputs.properties(replaceProperties)
 
@@ -336,7 +370,7 @@ tasks.withType<Jar>().configureEach {
 
 tasks.withType<JavaCompile>().configureEach {
 	options.encoding = "UTF-8"
-	options.release.set(25)
+	options.release.set(21)
 }
 
 /**
@@ -374,7 +408,16 @@ val checkMixinClassInitialisers by tasks.registering {
 	val mixinsDir = classesDir.map { it.dir("dev/birb/wgpu/mixin") }
 	val classpath = sourceSets["main"].runtimeClasspath
 
-	inputs.dir(mixinsDir).withPropertyName("mixinClasses")
+	// A *file collection* and not `inputs.dir(...)`, because Gradle 9 fails the build when a declared
+	// input directory does not exist, before `doLast` gets the chance to say there is nothing to check:
+	//
+	//   Property 'mixinClasses' specifies directory '...\dev\birb\wgpu\mixin' which doesn't exist.
+	//
+	// A branch that has not added its first mixin yet has no such directory - which is exactly the
+	// state `1.21.1-backport` starts in, and the state the guard below is written for. `@InputFiles`
+	// treats an absent path as an empty collection instead, so the task stays lazy and still re-runs
+	// when a mixin appears.
+	inputs.files(mixinsDir.map { it.asFileTree }).withPropertyName("mixinClasses")
 	inputs.files(classpath).withPropertyName("classpath")
 
 	doLast {

@@ -1,51 +1,45 @@
 package dev.birb.wgpu
 
-import dev.birb.wgpu.render.ShaderReloadListener
 import dev.birb.wgpu.rust.WgpuNative
-import net.minecraft.resources.Identifier
 import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.IEventBus
 import net.neoforged.fml.common.Mod
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent
 import net.neoforged.fml.loading.FMLPaths
-import net.neoforged.neoforge.client.event.AddClientReloadListenersEvent
 
+/**
+ * The client half of the mod: everything that must not run on a dedicated server.
+ *
+ * The only thing it does so far is bring the native library up and tell it where the game directory
+ * is, which is what the 26.1 branch does in the same place and in the same order. The renderer
+ * itself is not started from here - on this branch it has to be started from `Minecraft`'s own
+ * constructor, because 1.21.1 creates its GL context there and the window is claimed before that.
+ *
+ * The calls are wrapped in a `try` on purpose rather than left to throw. A 1.21.1 client that cannot
+ * load the cdylib should still reach the title screen and say so; the alternative is a crash during
+ * mod loading, with no window and no log line naming the library it wanted.
+ */
 @Mod(value = WgpuMcMod.MOD_ID, dist = [Dist.CLIENT])
 class WgpuMcModClient(modEventBus: IEventBus) {
 	init {
 		modEventBus.addListener(::onClientSetup)
-		modEventBus.addListener(::onRegisterClientReloadListeners)
 	}
 
 	private fun onClientSetup(event: FMLClientSetupEvent) {
 		event.enqueueWork {
 			try {
-				WgpuNative.getClassLoader()
+				WgpuNative.loadWm()
 				WgpuNative.sendRunDirectory(FMLPaths.GAMEDIR.get().toAbsolutePath().normalize().toString())
 				WgpuNative.setPanicHook()
-
-				// The renderer reads its config during mod construction, which is before
-				// `setPanicHook` installs `env_logger` - so everything it says while loading it is
-				// dropped, and that is both the settings themselves and the warning that a
-				// malformed file was replaced by the defaults. Reading the same document back here
-				// is what makes "my setting did not survive the restart" answerable from the log
-				// instead of from the config file by hand. They live in
-				// `config/wgpu-mc-renderer.json`, next to the game directory.
-				WgpuMcMod.LOGGER.info(
-					"wgpu-mc renderer settings as loaded: {}",
-					WgpuNative.getSettings(),
-				)
-
-				WgpuMcMod.LOGGER.info("wgpu-mc native bridge initialized")
+				WgpuMcMod.LOGGER.info("wgpu-mc native bridge initialised")
 			} catch (throwable: Throwable) {
-				WgpuMcMod.LOGGER.error("Failed to initialize wgpu-mc native bridge", throwable)
+				WgpuMcMod.LOGGER.error(
+					"wgpu-mc could not bring the native renderer library up, so this client will run on " +
+						"Minecraft's own renderer: {}",
+					throwable.toString(),
+				)
+				WgpuMcMod.LOGGER.debug("wgpu-mc native bootstrap failure", throwable)
 			}
 		}
-	}
-
-	private fun onRegisterClientReloadListeners(event: AddClientReloadListenersEvent) {
-		// NeoForge 26.1 replaced RegisterClientReloadListenersEvent's
-		// registerReloadListener(listener) with SortedReloadListenerEvent#addListener(id, listener).
-		event.addListener(Identifier.fromNamespaceAndPath(WgpuMcMod.MOD_ID, "shaders"), ShaderReloadListener)
 	}
 }
