@@ -135,6 +135,54 @@ object WgpuNative {
 	external fun setPanicHook()
 
 	/**
+	 * The window mode the settings name, as an index into the renderer's own variant list:
+	 * `0` exclusive fullscreen, `1` borderless, `2` a window.
+	 *
+	 * Read back rather than passed in, because the settings document lives on the Rust side: one source
+	 * of truth for which mode it is, and this call is only the moment to look.
+	 */
+	external fun windowMode(): Int
+
+	/**
+	 * Tells Rust the player chose a window mode, which stores the setting and asks for it to be applied.
+	 *
+	 * The applying comes back as a call to `dev.birb.wgpu.backend.DisplayMode.reapply`, because the
+	 * window is GLFW's and GLFW is reached from here.
+	 */
+	external fun setFullscreenMode(mode: Int)
+
+	/**
+	 * **Whether the window mode moved in the apply that just happened**: `-1` when it did, and the
+	 * current variant index when it did not.
+	 *
+	 * The schema cannot answer this - it says whether a setting *may* need a restart, not whether it
+	 * *did* - and a player who moved nothing is owed no message.
+	 */
+	external fun windowModeReloadResult(): Int
+
+	/**
+	 * Creates the renderer against a window, and returns its pointer.
+	 *
+	 * **The window is passed here rather than looked up later** so that Rust can create the surface
+	 * before it asks for an adapter, and therefore ask for one that can present to this window. A
+	 * renderer created without one picks an adapter on its own and then finds out it cannot present,
+	 * which on a machine with two GPUs is the usual outcome rather than the rare one.
+	 *
+	 * @param display the X11 `Display` or the Cocoa view, and `0` where the window is the whole identity
+	 * @param window the HWND, the X11 window id, or the Wayland surface
+	 * @return the renderer pointer, or `0` if it could not be created
+	 */
+	external fun createWmRendererOnWindow(display: Long, window: Long, width: Int, height: Int): Long
+
+	/**
+	 * Creates a renderer with no surface at all, for a process that has no window.
+	 *
+	 * Kept because it is the only way to bring the engine up without a window - a dedicated server, or a
+	 * test - and because it is what `createWmRendererOnWindow` grew out of.
+	 */
+	external fun createWmRenderer(): Long
+
+	/**
 	 * Loads a native library from the resources of this jar.
 	 *
 	 * @param name Library to load
