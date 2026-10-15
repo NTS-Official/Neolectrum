@@ -130,6 +130,11 @@ object ElectrumFrame {
                 width,
                 height,
             )
+            // The engine's own resource counters, at the one cadence this side already has. They are
+            // the only way to tell a leak of textures apart from one of buffers or encoders - a
+            // process's memory says only that something grew - and the Rust side is what decides
+            // whether the line is worth printing, so asking costs one call per three hundred frames.
+            WmJni.logRenderStats()
         }
         return true
     }
