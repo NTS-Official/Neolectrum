@@ -38,6 +38,9 @@ object WgpuRenderer {
 	/** What the game is told the largest texture is when there is no device to ask. */
 	private const val FALLBACK_MAX_TEXTURE_SIZE = 8192
 
+	/** The alignment every wgpu backend this renderer targets reports, and the floor GL names. */
+	private const val FALLBACK_UNIFORM_OFFSET_ALIGNMENT = 256
+
 	/** The renderer pointer, or `0` before [create] has run and after a failed one. */
 	@Volatile
 	private var handle: Long = 0L
@@ -57,18 +60,54 @@ object WgpuRenderer {
 	 */
 	@JvmStatic
 	fun create(): Boolean {
+		val client = Minecraft.getInstance() ?: run {
+			WgpuMcMod.LOGGER.error("wgpu-mc: there is no client to take a window from")
+			return false
+		}
+
+		return createOnWindow(client.window.window)
+	}
+
+	/**
+	 * Creates the renderer on a window handle this side was given, for the one caller that has the
+	 * handle earlier than anybody else: the window's own constructor.
+	 *
+	 * The client setup event is too late, and that is what this exists for. Its work is *queued* to
+	 * the client thread, and the client thread is the one running `Minecraft`'s constructor, which
+	 * reaches GL from inside it - `MainTarget` is built at line 482 and `LevelRenderer.createStars()`
+	 * uploads a vertex buffer at 568. A GL call answered by this mod before the library is loaded is
+	 * an `UnsatisfiedLinkError` from `WmJni`, and before the renderer exists it is a native call with
+	 * a null renderer. Both are avoided by doing this where the window becomes real, which is the
+	 * tail of `Window`'s constructor.
+	 */
+	@JvmStatic
+	fun createOnWindow(windowHandle: Long): Boolean {
 		if (attempted) {
 			return handle != 0L
 		}
 
 		attempted = true
 
-		val client = Minecraft.getInstance() ?: run {
-			WgpuMcMod.LOGGER.error("wgpu-mc: there is no client to take a window from")
+		// Loaded here rather than only from the client setup event, for the reason above: that event
+		// has not run yet when the game first reaches GL. `System.load` on the same path twice is a
+		// no-op, so the later call is still free to happen.
+		try {
+			WgpuNative.loadWm()
+		} catch (throwable: Throwable) {
+			WgpuMcMod.LOGGER.error(
+				"wgpu-mc: the native renderer library could not be loaded, so this client will run on " +
+					"Minecraft's own renderer: {}",
+				throwable.toString(),
+			)
+			WgpuMcMod.LOGGER.debug("wgpu-mc native library load failure", throwable)
 			return false
 		}
 
-		val windowHandle = client.window.window
+		if (windowHandle == 0L) {
+			WgpuMcMod.LOGGER.error("wgpu-mc: there is no window to put a renderer on")
+			return false
+		}
+
 		val (display, window) = windowHandles(windowHandle)
 
 		// The framebuffer size, in pixels, read from GLFW rather than from the game's window object:
@@ -104,6 +143,17 @@ object WgpuRenderer {
 	}
 
 	/**
+	 * Whether there is a renderer to talk to.
+	 *
+	 * Every engine call in `dev.birb.wgpu.gl` asks this first, because the alternative is a native
+	 * call with a null renderer - which is not a Java exception but a Rust panic on a JNI frame, and
+	 * a panic there aborts the process rather than unwinding. The renderer is created from the
+	 * window's constructor, so this is false only when that failed.
+	 */
+	@JvmStatic
+	fun isLive(): Boolean = handle != 0L
+
+	/**
 	 * The largest texture the device can hold.
 	 *
 	 * This exists because the game asks the question in a way that cannot be answered without a device:
@@ -132,6 +182,33 @@ object WgpuRenderer {
 				throwable.toString(),
 			)
 			FALLBACK_MAX_TEXTURE_SIZE
+		}
+	}
+
+	/**
+	 * The alignment a uniform offset has to be a multiple of.
+	 *
+	 * `glGetInteger(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT)` is a question about the driver, and on this
+	 * side the number belongs to the device - it is what decides how a uniform block is padded when
+	 * several of them share one buffer. The engine was asked it when the device was created.
+	 */
+	@JvmStatic
+	fun uniformOffsetAlignment(): Int {
+		val current = handle
+
+		if (current == 0L) {
+			return FALLBACK_UNIFORM_OFFSET_ALIGNMENT
+		}
+
+		return try {
+			WmJni.minUniformOffsetAlignment(current)
+		} catch (throwable: Throwable) {
+			WgpuMcMod.LOGGER.warn(
+				"wgpu-mc: the device could not be asked for its uniform offset alignment, so the game is told {}: {}",
+				FALLBACK_UNIFORM_OFFSET_ALIGNMENT,
+				throwable.toString(),
+			)
+			FALLBACK_UNIFORM_OFFSET_ALIGNMENT
 		}
 	}
 

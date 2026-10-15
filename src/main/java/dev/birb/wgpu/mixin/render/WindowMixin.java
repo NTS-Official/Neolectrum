@@ -2,6 +2,7 @@ package dev.birb.wgpu.mixin.render;
 
 import com.mojang.blaze3d.platform.Window;
 import dev.birb.wgpu.WgpuMcMod;
+import dev.birb.wgpu.backend.WgpuRenderer;
 import dev.birb.wgpu.render.GlSeam;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWErrorCallbackI;
@@ -9,6 +10,7 @@ import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GLCapabilities;
 import org.lwjgl.system.MemoryUtil;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -85,6 +87,16 @@ public class WindowMixin {
 	 */
 	private static GLFWErrorCallbackI wgpuBootErrorCallback;
 
+	/**
+	 * The GLFW handle this constructor created.
+	 *
+	 * Read rather than passed: the injection at the tail of the constructor has no other way to name
+	 * the window, and capturing it from the {@code glfwMakeContextCurrent} redirect would depend on
+	 * a call this mixin is free to skip.
+	 */
+	@Shadow
+	private long window;
+
 	@Inject(
 		method = "<init>",
 		at = @At(
@@ -100,6 +112,27 @@ public class WindowMixin {
 
 		GLFW.glfwWindowHint(GLFW.GLFW_CLIENT_API, GLFW.GLFW_NO_API);
 		GLFW.glfwSetErrorCallback(wgpuBootErrorCallback());
+	}
+
+	/**
+	 * Brings the renderer up as soon as the window it draws into exists.
+	 *
+	 * <p>This is the earliest point that is also late enough. The native library has to be loaded and
+	 * the renderer created <em>before</em> {@code Minecraft}'s constructor reaches GL, which it does
+	 * from inside itself: {@code MainTarget} is built at line 482 and {@code LevelRenderer.createStars}
+	 * uploads a vertex buffer at 568. NeoForge's client setup event is too late for both - its work is
+	 * queued to the client thread, and that thread is the one running that constructor.
+	 *
+	 * <p>The window is the bound rather than a choice: a wgpu surface is created on this window's
+	 * handle before the adapter is asked for, so nothing here can run any earlier.
+	 */
+	@Inject(method = "<init>", at = @At("TAIL"))
+	private void wgpuCreateRendererOnTheNewWindow(CallbackInfo ci) {
+		if (!GlSeam.isGlWindowDisabled()) {
+			return;
+		}
+
+		WgpuRenderer.createOnWindow(this.window);
 	}
 
 	private static GLFWErrorCallbackI wgpuBootErrorCallback() {
