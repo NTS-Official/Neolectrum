@@ -1,6 +1,7 @@
 package dev.birb.wgpu.backend
 
 import dev.birb.wgpu.WgpuMcMod
+import dev.birb.wgpu.rust.WmJni
 import dev.birb.wgpu.rust.WgpuNative
 import net.minecraft.client.Minecraft
 import org.lwjgl.glfw.GLFW
@@ -27,10 +28,16 @@ import org.lwjgl.glfw.GLFWNativeX11
  * on the first tick - after `Minecraft`'s constructor has finished and therefore after there is a window
  * with a handle, and before the first frame is drawn.
  *
- * The GL context that 1.21.1 creates is left alone. It exists because the game insists on it; the
- * surface is a second, independent one on the same HWND, and nothing here draws through GL.
+ * The GL context that 1.21.1 creates is **taken away before it exists**: `GLFW_NO_API` is asked for by
+ * `WindowMixin`, switched on by `-Pwgpu_mc_no_gl_window`, because a window whose HWND already carries a
+ * WGL swapchain refuses a second one - measured as `0x80070005` from D3D12 and `Native window is in use`
+ * from Vulkan. See that mixin for the whole of it. With the switch off the game keeps its context and
+ * this renderer has no surface to present to, which is the state this class was first written in.
  */
 object WgpuRenderer {
+	/** What the game is told the largest texture is when there is no device to ask. */
+	private const val FALLBACK_MAX_TEXTURE_SIZE = 8192
+
 	/** The renderer pointer, or `0` before [create] has run and after a failed one. */
 	@Volatile
 	private var handle: Long = 0L
@@ -93,6 +100,38 @@ object WgpuRenderer {
 			WgpuMcMod.LOGGER.error("wgpu-mc: creating the renderer failed: {}", throwable.toString())
 			WgpuMcMod.LOGGER.debug("wgpu-mc renderer creation failure", throwable)
 			false
+		}
+	}
+
+	/**
+	 * The largest texture the device can hold.
+	 *
+	 * This exists because the game asks the question in a way that cannot be answered without a device:
+	 * `RenderSystem.maxSupportedTextureSize` reads `GL_MAX_TEXTURE_SIZE` and then proves the answer by
+	 * allocating a texture at each power of two down from 32768, so a window with no GL context does not
+	 * get a wrong number from it - it reaches into a driver that is not there. The adapter was asked the
+	 * same question when the device was created, and this is that answer.
+	 *
+	 * The fallback is what the pre-26.1 mod used, and it is only reached before [create] has run: the
+	 * game asks once, during window construction, and caches whatever it is told for the session.
+	 */
+	@JvmStatic
+	fun maxTextureSize(): Int {
+		val current = handle
+
+		if (current == 0L) {
+			return FALLBACK_MAX_TEXTURE_SIZE
+		}
+
+		return try {
+			WmJni.maxTextureSize(current)
+		} catch (throwable: Throwable) {
+			WgpuMcMod.LOGGER.warn(
+				"wgpu-mc: the device could not be asked for its largest texture, so the game is told {}: {}",
+				FALLBACK_MAX_TEXTURE_SIZE,
+				throwable.toString(),
+			)
+			FALLBACK_MAX_TEXTURE_SIZE
 		}
 	}
 

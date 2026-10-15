@@ -348,7 +348,18 @@ tasks.matching { it.name == "runClient" }.configureEach {
 tasks.matching { it.name.startsWith("run") }.configureEach {
 	if (this is JavaForkOptions) {
 		jvmArgumentProviders.add(CommandLineArgumentProvider {
-			listOf("--enable-native-access=ALL-UNNAMED,wgpu_mc")
+			// The present test is a `-D` because there is no settings screen on this branch yet,
+			// and a property is the shape that cannot be left lying in a directory the way a marker
+			// file can. It goes through Gradle as `-Pwgpu_mc_present_test`, and so reaches the game
+			// by the one route that does not need the launcher to cooperate.
+			val presentTest = project.providers.gradleProperty("wgpu_mc_present_test").getOrElse("false")
+			val noGlWindow = project.providers.gradleProperty("wgpu_mc_no_gl_window").getOrElse("false")
+
+			listOf(
+				"--enable-native-access=ALL-UNNAMED,wgpu_mc",
+				"-Dwgpu_mc.present_test=$presentTest",
+				"-Dwgpu_mc.no_gl_window=$noGlWindow",
+			)
 		})
 	}
 }

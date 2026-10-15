@@ -4,6 +4,8 @@
   "package": "dev.birb.wgpu.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "core.RenderSystemMixin",
+    "render.WindowMixin"
   ],
   "injectors": {
     "defaultRequire": 1
