@@ -35,13 +35,19 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * <p>Redirecting the call inside them keeps all of it. What is replaced is exactly the driver, and
  * the game goes on believing it is running on GL.
  *
- * <h2>What is here, and what is not</h2>
+ * <h2>What is here</h2>
  *
- * <p>The groups below are the driver calls this renderer can answer today: the fixed-function state,
- * the textures and the framebuffers and renderbuffers. The groups that are <em>not</em> here yet -
- * buffers, programs and uniforms, vertex attributes and the draws themselves - are deliberately left
- * alone rather than stubbed, because a stubbed call is a picture that is quietly wrong while a call
- * still reaching a driver that is not there stops the game at the first one and says which it was.
+ * <p>Every group of driver calls this game makes: the fixed-function state, buffers and vertex
+ * arrays, textures, programs and uniforms, framebuffers and renderbuffers, and the draws themselves.
+ * A group is here when the renderer can answer it and nothing is stubbed, so a call that is missing
+ * stops the game at the first one and says which it was rather than drawing a picture that is
+ * quietly wrong.
+ *
+ * <p><b>These redirects are not conditional, and the window is.</b> {@code WindowMixin} only takes
+ * the GL context away when {@code wgpu_mc.no_gl_window} is set, so a launch without it has a real
+ * context and these redirects fire anyway - sending the game's GL calls to a renderer that was
+ * never created. That is a launch this branch does not support yet, and it is why the property is
+ * how the client is started rather than an option within it.
  *
  * <p>Every redirect is {@code remap = false} on its lwjgl target: {@code GL11} and friends are not
  * game classes and appear in no mapping set.

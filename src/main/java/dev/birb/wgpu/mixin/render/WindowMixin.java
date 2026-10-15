@@ -71,10 +71,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * writes {@code earlyWindowControl = false} into the run's {@code fml.toml}, so the first window
  * this game creates is this one.
  *
- * <p>Off by default, and switched by {@code -Pwgpu_mc_no_gl_window}, because a client whose window
- * has no GL context cannot be drawn by Blaze3D at all: until the GL seam is replaced the game stops
- * at the first call that needs a context. This is a switch to be turned on while that work is in
- * progress, not one a player turns on.
+ * <p>Off by default, and switched by {@code -Pwgpu_mc_no_gl_window}. The seam answers every GL call
+ * this game makes now - the client reaches its title screen through it and presents there, at
+ * 854x480 and again after a resize - so this is the way the branch is started rather than a step of
+ * the work in progress. It stays off by default until the seam's redirects are conditional: they
+ * are not, so a launch without the property has a GL context and still sends the game's calls to a
+ * renderer that was never created.
  */
 @Mixin(Window.class)
 public class WindowMixin {
