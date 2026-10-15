@@ -51,3 +51,10 @@ repo/
 /build-*.log
 /gl-calls.txt
 /*.png
+
+### Tooling ###
+# GraphFlow's cache, index and report directories are written beside the module by the tooling, not by
+# the mod.
+/.graphflow-cache/
+/.graphflow/
+/graphflow-out/

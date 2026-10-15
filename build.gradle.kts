@@ -362,6 +362,32 @@ tasks.matching { it.name.startsWith("run") }.configureEach {
 	}
 }
 
+// The game arguments a run is started with beyond the launcher's own, which is how a run reaches a
+// world without anyone clicking through the title screen:
+//
+//   gradlew runClient -Pwgpu_mc_quickplay="新的世界"
+//
+// It goes on as a *provider* for the reason the flags above do, and it is the same trap in the other
+// argument list. NeoGradle configures the run tasks from its own run config after this block has
+// run, so an `args(...)` here would be replaced along with everything else the plugin set.
+//
+// Gradle's own `--args` option is not the way round it either, and the way it fails is worth writing
+// down because it names nothing: `--args` does not append to a run task's program arguments, it
+// *replaces* them - and the launcher's own arguments (`--launchTarget`, `--gameDir`, the `--fml.*`
+// set) are program arguments too. A run started that way reaches FML with none of them, and dies in
+// its bootstrapping with `NullPointerException` out of `ImmediateWindowHandler.load` before a single
+// mod is loaded, which reads as a mod problem and is not one. A provider is a second list that a
+// later `setArgs` cannot drop, so the launcher's list stays whole and these are appended to it.
+tasks.matching { it.name.startsWith("run") }.configureEach {
+	if (this is JavaExec) {
+		argumentProviders.add(CommandLineArgumentProvider {
+			val level = project.providers.gradleProperty("wgpu_mc_quickplay").getOrElse("")
+
+			if (level.isEmpty()) emptyList() else listOf("--quickPlaySingleplayer", level)
+		})
+	}
+}
+
 // Diagnostics - the frame/trace dumps behind `dev.birb.wgpu.backend.Diagnostics` - are switched on
 // per run instead of from here, because the launcher's JVM arguments turned out to be one more
 // thing that can silently not arrive:
