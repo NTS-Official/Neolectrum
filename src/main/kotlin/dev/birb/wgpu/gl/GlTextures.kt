@@ -354,8 +354,17 @@ object GlTextures {
         val bpp = GpuFormats.bytesPerPixel(format, type)
         if (bpp <= 0) return
 
+        // GL's own default row length is the *sub-rectangle's* width, which is why a zero here means
+        // `width` rather than "unset".
         val rowLength = if (GlState.unpackRowLength > 0) GlState.unpackRowLength else width
-        val tight = GlState.unpackSkipPixels == 0 && GlState.unpackSkipRows == 0 && rowLength == width
+        // `GL_UNPACK_ALIGNMENT` pads every row out to a multiple of itself. It only bites when a row
+        // is not already that long, which is why the game never trips it: `NativeImage#_upload` ends
+        // with `format.setUnpackPixelStoreState()`, and that sets the alignment to the format's own
+        // byte width. Reading it anyway is what makes this correct for an upload that does not.
+        val alignment = if (GlState.unpackAlignment > 0) GlState.unpackAlignment else 1
+        val packed = rowLength.toLong() * bpp.toLong()
+        val stride = (packed + alignment - 1) / alignment * alignment
+        val tight = GlState.unpackSkipPixels == 0 && GlState.unpackSkipRows == 0 && stride == width.toLong() * bpp.toLong()
 
         if (tight) {
             val size = width.toLong() * height.toLong() * bpp.toLong()
@@ -369,9 +378,11 @@ object GlTextures {
 
         val scratch = MemoryUtil.memAlloc(width * height * bpp)
         try {
-            val start = address + (GlState.unpackSkipRows.toLong() * rowLength + GlState.unpackSkipPixels) * bpp
+            // The skip is in the source image's own coordinates: whole rows first, then pixels along
+            // the row that starts there.
+            val start = address + GlState.unpackSkipRows.toLong() * stride + GlState.unpackSkipPixels.toLong() * bpp.toLong()
             for (row in 0 until height) {
-                MemoryUtil.memCopy(start + row.toLong() * rowLength * bpp, MemoryUtil.memAddress(scratch) + row.toLong() * width * bpp, width.toLong() * bpp)
+                MemoryUtil.memCopy(start + row.toLong() * stride, MemoryUtil.memAddress(scratch) + row.toLong() * width * bpp, width.toLong() * bpp)
             }
             val size = width.toLong() * height.toLong() * bpp.toLong()
             WmJni.writeToTexture(wm, entry.texture, MemoryUtil.memAddress(scratch), size, level, 0, x, y, width, height)
@@ -425,8 +436,13 @@ object GlTextures {
     fun pixelStore(pname: Int, value: Int) {
         when (pname) {
             3314 -> GlState.unpackRowLength = value
-            3315 -> GlState.unpackSkipPixels = value
-            3316 -> GlState.unpackSkipRows = value
+            // `GL_UNPACK_SKIP_ROWS` is 3315 and `GL_UNPACK_SKIP_PIXELS` is 3316 - the opposite of what
+            // the two names' order suggests, and crossed here until the bitmap font proved it.
+            // `NativeImage#_upload` sets 3316 to the glyph's *column* and 3315 to its *row*, so with
+            // them swapped every glyph off the sheet's diagonal was read from the wrong place: the
+            // title screen drew clean, well-formed glyphs that spelled nothing.
+            3315 -> GlState.unpackSkipRows = value
+            3316 -> GlState.unpackSkipPixels = value
             3317 -> GlState.unpackAlignment = value
             else -> Unit
         }
