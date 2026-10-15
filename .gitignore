@@ -41,3 +41,13 @@ runs/
 **/src/generated/**/.cache/
 repo/
 !**/src/**/repo/
+
+### Run output ###
+# A `runClient` writes its stdout beside the module, and a frame or window dump writes a PNG there
+# too. Both are read while a bug is being chased rather than kept, which is the same reason `runs/`
+# above is ignored: what a run produces belongs to that run.
+/run-stdout.log
+/runclient*.log
+/build-*.log
+/gl-calls.txt
+/*.png
