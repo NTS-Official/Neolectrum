@@ -58,3 +58,6 @@ repo/
 /.graphflow-cache/
 /.graphflow/
 /graphflow-out/
+
+# A run's own output, including the engine's stderr, which the tee does not take.
+/run-stderr.log
