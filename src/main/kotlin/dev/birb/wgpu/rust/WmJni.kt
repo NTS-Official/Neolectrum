@@ -87,6 +87,25 @@ object WmJni {
     external fun minUniformOffsetAlignment(wm: Long): Int
     external fun logRenderStats(): Unit
     external fun dumpTextureRgba(wm: Long, texture: Long, path: String, flip_y: Boolean): Boolean
+
+    /**
+     * Copies a texture's level 0 into [address] as tightly packed RGBA rows, and answers whether it
+     * could.
+     *
+     * This is `glGetTexImage`'s readback. The game owns the destination - `NativeImage`'s pixels -
+     * and [capacity] is what it holds, so nothing is written past it; a texture that does not fit
+     * leaves the buffer untouched and answers false, which is what GL does when it refuses.
+     *
+     * [flip_y] writes the rows bottom-up, which is what a render target needs: this backend keeps
+     * Minecraft's OpenGL clip space, so such a texture's first row is at the bottom.
+     */
+    external fun readTextureRgba(
+        wm: Long,
+        texture: Long,
+        address: Long,
+        capacity: Int,
+        flip_y: Boolean,
+    ): Boolean
     external fun dumpSurfaceTextureRgba(wm: Long, surface_texture: Long, path: String): Boolean
     external fun terrainPassReady(wm: Long): Boolean
     external fun terrainArenaCanGrow(): Boolean
