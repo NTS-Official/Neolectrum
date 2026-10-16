@@ -61,3 +61,6 @@ repo/
 
 # A run's own output, including the engine's stderr, which the tee does not take.
 /run-stderr.log
+
+# Kotlin's incremental-build scratch, written by the compiler at the project root
+.kotlin/
