@@ -466,7 +466,7 @@ object GlTextures {
         // The frame's draws may still be sitting in an encoder that has not been submitted, and a copy
         // taken now would read the texture as it was before them. This is the same reason a blit
         // flushes first.
-        GlDraws.endFrame(wm)
+        GlDraws.endFrame(wm, "readback")
 
         val capacity = entry.width.toLong() * entry.height * 4L
         if (capacity <= 0L || capacity > Int.MAX_VALUE) return false

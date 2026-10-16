@@ -354,10 +354,19 @@ tasks.matching { it.name.startsWith("run") }.configureEach {
 			// one route that does not need the launcher to cooperate.
 			val noGlWindow = project.providers.gradleProperty("wgpu_mc_no_gl_window").getOrElse("false")
 
+			// Native memory tracking, for the one question no counter in this renderer can answer: a
+			// run whose private bytes climb while every `live resources` number stays flat is growing
+			// somewhere that is neither the Java heap nor a texture, a buffer or a command encoder.
+			// `jcmd <pid> VM.native_memory baseline` after the world is up, then `summary.diff` a
+			// minute later, puts the growth in a bucket - and "Other" is the one that means native
+			// code rather than the JVM's own bookkeeping. Off unless asked for: it costs a few percent
+			// and changes the timing of what it measures.
+			val nativeMemoryTracking = project.providers.gradleProperty("wgpu_mc_nmt").getOrElse("")
+
 			listOf(
 				"--enable-native-access=ALL-UNNAMED,wgpu_mc",
 				"-Dwgpu_mc.no_gl_window=$noGlWindow",
-			)
+			) + if (nativeMemoryTracking.isEmpty()) emptyList() else listOf("-XX:NativeMemoryTracking=$nativeMemoryTracking")
 		})
 	}
 }

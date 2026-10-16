@@ -60,7 +60,7 @@ object GlPresent {
 		// result - so they are submitted first. This is the only moment a frame is known to be over:
 		// the game has finished drawing into its main target and is handing it to the window, and the
 		// next thing that happens is another frame's worth of draws into the same target.
-		GlDraws.endFrame(wm)
+		GlDraws.endFrame(wm, "present")
 
 		if (width != configuredWidth || height != configuredHeight) {
 			WmJni.configureSurface(wm, width, height, PRESENT_MODE_FROM_SETTINGS)

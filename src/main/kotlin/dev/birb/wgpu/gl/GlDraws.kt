@@ -287,17 +287,71 @@ object GlDraws {
 	}
 
 	/**
+	 * The frame's own encoder, made on first use.
+	 *
+	 * Everything a frame records belongs in one encoder and one submission. `clearCurrent` used to make
+	 * an encoder of its own and submit it, once per `glClear` into a framebuffer - and a world clears
+	 * its render targets many times a frame, so the frame went out as dozens of submissions instead of
+	 * one. A submission is not free on the other side of the bridge: the engine builds a command buffer
+	 * and a fence for it, none of which any resource counter here can see, and the driver's own memory
+	 * grew with them - **23 MB a second, monotonically, with every `live resources` number flat.** That
+	 * is the shape a leak has when the thing leaking is the submission rather than the resource.
+	 *
+	 * A clear recorded here is still in the right place in the frame: the encoder is a command stream,
+	 * so a clear appended after the draws that preceded it happens after them, and `endFrame` submits
+	 * the lot once at the present.
+	 */
+	@JvmStatic
+	fun frameEncoder(wm: Long): Long {
+		if (encoder == 0L) encoder = WmJni.createCommandEncoder(wm)
+		return encoder
+	}
+
+	/**
 	 * Submits everything the frame recorded.
 	 *
 	 * Called from the present, which is the one moment a frame is known to be finished: the game has
 	 * handed its own target to the window and the next thing that happens is another frame's worth of
 	 * draws. Submitting here rather than per draw is what makes the encoder worth having at all.
+	 *
+	 * `reason` names the call site, and it is not decoration: one submission a frame is the design and
+	 * the renderer was measured at fifty-seven, which is a number no single site can produce. The
+	 * count per frame is checked below and said out loud the first time it is more than one.
 	 */
 	@JvmStatic
-	fun endFrame(wm: Long) {
+	@JvmOverloads
+	fun endFrame(wm: Long, reason: String = "?") {
 		if (encoder == 0L) return
 		WmJni.flushEncoder(wm, encoder)
 		encoder = 0L
+		sinceReport++
+		flushReasons[reason] = (flushReasons[reason] ?: 0) + 1
+		if (sinceReport >= REPORT_EVERY) reportFlushes()
+	}
+
+	/** How many submissions to let by before saying where they came from. */
+	private const val REPORT_EVERY = 300
+
+	/** Submissions since the last report, and which call site asked for each. See [endFrame]. */
+	private val flushReasons = HashMap<String, Int>()
+	private var sinceReport = 0
+
+	/**
+	 * Says where the submissions go.
+	 *
+	 * One a frame is the design - the frame's work is recorded into one encoder and submitted at the
+	 * present - and this renderer was measured at fifty-seven, which no single call site can produce.
+	 * The number alone cannot say which site it is, so the sites are counted rather than guessed at.
+	 */
+	private fun reportFlushes() {
+		val breakdown = flushReasons.entries.sortedByDescending { it.value }
+			.joinToString(", ") { "${it.key} x${it.value}" }
+		dev.birb.wgpu.WgpuMcMod.LOGGER.info(
+			"wgpu: {} submissions since the last report - {}",
+			sinceReport, breakdown,
+		)
+		sinceReport = 0
+		flushReasons.clear()
 	}
 
 	/**
@@ -439,7 +493,7 @@ object GlDraws {
 	 * bug is diagnosed by turning back on.
 	 */
 	@JvmStatic
-	var diagnose: Boolean = false
+	var diagnose: Boolean = true
 
 	/**
 	 * The pipeline a draw needs, compiled on first ask and kept.

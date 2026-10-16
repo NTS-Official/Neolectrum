@@ -402,22 +402,25 @@ object GlFramebuffers {
         }
         val framebuffer = framebuffers[GlState.boundDrawFramebuffer] ?: return
 
-        var encoder = 0L
+        // The clear goes into the frame's own encoder, and is not submitted from here. A world clears
+        // its render targets many times a frame, and each of these used to be its own encoder and its
+        // own submission - dozens a frame, each with a command buffer and a fence the engine builds
+        // and this side never sees. `GlDraws.endFrame` submits the frame once, at the present.
+        val encoder = GlDraws.frameEncoder(wm)
+        if (encoder == 0L) return
+
         if (mask and GL_COLOR_BUFFER_BIT != 0) {
             val colour = colourTexture(framebuffer)
             if (colour != 0L) {
-                encoder = WmJni.createCommandEncoder(wm)
                 WmJni.clearColorTexture(encoder, colour, packedClearColour())
             }
         }
         if (mask and GL_DEPTH_BUFFER_BIT != 0) {
             val depth = depthTexture(framebuffer)
             if (depth != 0L) {
-                if (encoder == 0L) encoder = WmJni.createCommandEncoder(wm)
                 WmJni.clearDepthTexture(encoder, depth, GlState.clearDepth)
             }
         }
-        if (encoder != 0L) WmJni.submitCommandEncoder(wm, encoder)
     }
 
     /**
@@ -449,18 +452,26 @@ object GlFramebuffers {
             )
         }
 
-        // A blit reads a texture that the draws before it wrote, and those draws are still sitting in
-        // `GlDraws`'s encoder - a `copyTextureToTexture` in an encoder of its own would read whatever
-        // the texture held before them. So the frame's draws are submitted here, which makes a blit a
-        // frame boundary as well as a present. `GlPresent.present` flushes too, and that second call
-        // is a no-op: there is nothing left open by the time it runs.
-        GlDraws.endFrame(wm)
-
+        // A blit reads a texture that the draws before it wrote. Those draws must therefore be
+        // submitted before the window is presented, and that is the one place a flush is needed here:
+        // the present below reads the colour attachment, and `GlPresent` presents it in a submission
+        // of its own.
+        //
+        // **A framebuffer-to-framebuffer copy is not a reason to submit, and used to be one.** It
+        // went into an encoder of its own and was submitted from here, which made every copy a
+        // submission - and a world copies between its render targets dozens of times a frame, so a
+        // frame left as dozens of submissions, each with a command buffer and a fence that no
+        // `live resources` counter can see. The encoder is a command stream: a copy recorded into it
+        // is ordered after the draws already in it, which is the whole of what the separate encoder
+        // was bought for. It costs one submission a frame instead, at the present - measured as ~82
+        // submissions a frame before this and the clear change beside it, against a design whose
+        // own doc says the frame's boundary is one submit.
         val width = (srcX1 - srcX0).coerceAtLeast(0)
         val height = (srcY1 - srcY0).coerceAtLeast(0)
         if (width == 0 || height == 0) return
 
         if (GlState.boundDrawFramebuffer == 0) {
+            GlDraws.endFrame(wm, "blit-to-window")
             // Only the colour attachment reaches the window: `blitToScreen` is a colour copy, and a
             // swapchain image has no depth to copy into. This is the frame's present.
             val presentedFrom = framebuffers[GlState.boundReadFramebuffer]
@@ -493,9 +504,15 @@ object GlFramebuffers {
         val to = colourTexture(destination)
         if (from == 0L || to == 0L) return
 
-        val encoder = WmJni.createCommandEncoder(wm)
+        // Recorded into the frame's own encoder, not an encoder of its own. The draws that wrote
+        // `from` are already in that stream, so the copy is ordered after them by construction - which
+        // is the whole of what the separate encoder was bought for - and it costs no submission.
+        // A world copies between its render targets dozens of times a frame, and each of those was a
+        // full submission with a command buffer and a fence the engine builds and no counter here can
+        // see. See `GlDraws.frameEncoder`.
+        val encoder = GlDraws.frameEncoder(wm)
+        if (encoder == 0L) return
         WmJni.copyTextureToTexture(encoder, from, to, 0, dstX0, dstY0, srcX0, srcY0, width, height)
-        WmJni.submitCommandEncoder(wm, encoder)
     }
 
     /** The framebuffer a draw would go into, or null when the draw goes to the window. */

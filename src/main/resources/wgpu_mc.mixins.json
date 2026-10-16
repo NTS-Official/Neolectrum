@@ -7,6 +7,7 @@
     "core.GlBooleanStateMixin",
     "core.GlStateManagerMixin",
     "core.RenderSystemMixin",
+    "core.TimerQueryMixin",
     "render.WindowMixin"
   ],
   "injectors": {

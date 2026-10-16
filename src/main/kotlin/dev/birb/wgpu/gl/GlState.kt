@@ -72,8 +72,18 @@ object GlState {
     /** Which texture unit is selected, as a zero-based index (GL's `GL_TEXTURE0` is 0 here). */
     @JvmField var activeTexture: Int = 0
 
-    /** The texture bound to `GL_TEXTURE_2D` on each unit, by GL name. -1 is "nothing". */
-    @JvmField val boundTextures = IntArray(MAX_TEXTURE_UNITS) { -1 }
+    /**
+     * The texture bound to `GL_TEXTURE_2D` on each unit, by GL name. -1 is "nothing".
+     *
+     * Filled rather than built by a lambda, and that is worth the two extra characters on the front
+     * of it: `IntArray(n) { -1 }` compiles the fill into a *loop inside this object's static
+     * initialiser*, and a loop in a `<clinit>` is the one construct here that a stale or half-written
+     * class file can be verifier-broken in while every other method still checks out. It cost an
+     * afternoon: `java.lang.VerifyError: Bad local variable type ... GlState.<clinit>()V @15`, thrown
+     * while the frame's first texture was deleted, from a class file that `javap` read back as
+     * correct. `Arrays.fill` is one call and nothing to get wrong.
+     */
+    @JvmField val boundTextures = IntArray(MAX_TEXTURE_UNITS).also { it.fill(-1) }
 
     // There is deliberately no `boundBuffers` here. There was one, and nothing ever wrote it while
     // `glVertexAttribPointer` read it - so every attribute was recorded against buffer 0, the draw
