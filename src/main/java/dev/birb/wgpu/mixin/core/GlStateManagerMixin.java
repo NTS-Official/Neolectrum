@@ -416,6 +416,26 @@ public class GlStateManagerMixin {
 		GlTextures.texSubImage2D(target, level, xOffset, yOffset, width, height, format, type, pixels);
 	}
 
+	/**
+	 * `glGetTexImage`, which is the one readback the game makes and the one call that used to end the
+	 * process.
+	 *
+	 * {@code GameRenderer#tryTakeScreenshotIfNeeded} asks for it a second after a singleplayer player
+	 * logs in, so that the world list can show the level's icon. Without this redirect it reached
+	 * LWJGL's unbound GL entry point - a window created with {@code GLFW_NO_API} has no context to have
+	 * bound one - and the client died with an access violation inside
+	 * {@code GL11C.nglGetTexImage(IIIIJ)V+0} the moment a world was entered. Nothing about that crash
+	 * named the call: the top of the Java stack was {@code NativeImage.downloadTexture}, and the frame
+	 * itself was an anonymous address.
+	 */
+	@Redirect(
+		method = "_getTexImage",
+		at = @At(value = "INVOKE", target = "Lorg/lwjgl/opengl/GL11;glGetTexImage(IIIIJ)V", remap = false)
+	)
+	private static void wgpuGetTexImage(int target, int level, int format, int type, long pixels) {
+		GlTextures.getTexImage(level, pixels);
+	}
+
 	// =============================================================================================
 	// Framebuffers and renderbuffers
 	// =============================================================================================

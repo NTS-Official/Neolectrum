@@ -70,6 +70,9 @@ object GlBuffers {
 		/** The engine buffer, or 0 for a name that was generated and never given storage. */
 		var handle: Long = 0L
 
+		/** How many bytes the engine buffer behind [handle] actually holds. See [storage]. */
+		var allocated: Long = 0L
+
 		var size: Long = 0L
 		var usage: Int = 0
 
@@ -207,16 +210,34 @@ object GlBuffers {
 	 * resource with nothing to say.
 	 */
 	private fun storage(entry: Entry, size: Long, data: ByteBuffer?) {
-		release(entry)
-		entry.size = size
 		entry.usage = usageFor(entry.target)
 		if (size <= 0L) {
+			release(entry)
+			entry.size = 0L
 			return
 		}
 
 		val wm = WgpuRenderer.handle()
-		val label = "gl buffer " + entry.name
-		entry.handle = WmJni.createBuffer(wm, label, entry.usage, size)
+
+		// **A store that is already big enough is kept, not replaced.** GL reads `glBufferData` as
+		// orphaning the old store, but the *name* keeps its identity, and Minecraft calls it again and
+		// again on one name: the immediate-mode buffers it uploads each GUI batch into, the terrain
+		// arena, every `VertexBuffer` it re-uploads. Handing each of those a fresh engine buffer is what
+		// a driver answers by reserving device memory faster than it gives it back. Measured in a world,
+		// 300 frames created 14,157 buffers and the process grew by ~170 MB a second with every one of
+		// the renderer's own counters flat, because the buffers it had dropped were counted and the
+		// driver's blocks behind them were not.
+		//
+		// Reusing the store is the same bytes in the same place. What it is not is a buffer that is
+		// zeroed: bytes past `size` are whatever the last upload left there. Nothing reads them - a draw
+		// takes its count from the game, not from the store - which is the same guarantee GL gives an
+		// orphaned store, and it is why `allocated` and `size` are two fields.
+		if (entry.handle == 0L || entry.allocated < size) {
+			release(entry)
+			entry.allocated = size
+			entry.handle = WmJni.createBuffer(wm, "gl buffer " + entry.name, entry.usage, size)
+		}
+		entry.size = size
 
 		// `createBufferInit` would do this in one call, but the engine's own JNI bridge does not
 		// answer it on this branch - so the store is made empty and filled, which is the same
@@ -260,6 +281,7 @@ object GlBuffers {
 			WmJni.dropBuffer(entry.handle)
 			entry.handle = 0L
 		}
+		entry.allocated = 0L
 		entry.mapping?.let { MemoryUtil.memFree(it) }
 		entry.mapping = null
 	}

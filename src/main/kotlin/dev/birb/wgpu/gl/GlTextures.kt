@@ -4,6 +4,8 @@ import dev.birb.wgpu.WgpuMcMod
 import dev.birb.wgpu.backend.WgpuRenderer
 import dev.birb.wgpu.rust.WmJni
 import org.lwjgl.system.MemoryUtil
+import java.io.File
+import java.io.IOException
 import java.nio.IntBuffer
 
 /**
@@ -429,6 +431,66 @@ object GlTextures {
             GL_TEXTURE_HEIGHT -> (entry.height shr shift).coerceAtLeast(1)
             GL_TEXTURE_INTERNAL_FORMAT -> entry.internalFormat
             else -> 0
+        }
+    }
+
+    /**
+     * Where a readback puts the texture while it is being moved to the CPU. The game's own directory,
+     * because the engine's dump writes to a path relative to it, and deleted on the way out.
+     */
+    private const val READBACK_FILE = "wgpu-readback.raw"
+
+    /** A dump is `u32 width`, `u32 height`, then the pixels. */
+    private const val DUMP_HEADER = 8
+
+    /**
+     * `glGetTexImage`: read a texture back into memory the caller owns.
+     *
+     * Minecraft asks this in one place, and it is not optional. `Screenshot`/`NativeImage#downloadTexture`
+     * read the main render target's colour texture to make a world's icon the first time a singleplayer
+     * level is entered - `GameRenderer#tryTakeScreenshotIfNeeded` does it a second after the player logs
+     * in, and every frame after that until it succeeds. Left to LWJGL the call reaches an unbound GL
+     * entry point, because a window created with `GLFW_NO_API` has no context to have bound one, and the
+     * client dies with `EXCEPTION_ACCESS_VIOLATION` at `GL11C.nglGetTexImage(IIIIJ)V+0` the moment a
+     * world is entered - which is what `runs/client/hs_err_pid20488.log` is.
+     *
+     * A wgpu texture cannot be read on the CPU, so this takes the route the renderer's own dump takes -
+     * copy the texture to a buffer on the GPU, wait for it, then move the bytes. The dump writes a file
+     * because that is what its caller wants; here the pixels go into the game's own `NativeImage`
+     * memory, so the copy is a `memCopy` and the caller's buffer is never overrun. A texture smaller
+     * than the caller expects leaves the rest of its buffer as it was, which is what GL does too.
+     *
+     * `level` is accepted and ignored: level 0 is the only one anything asks for.
+     */
+    @JvmStatic
+    fun getTexImage(level: Int, pixels: Long): Boolean {
+        if (pixels == 0L) return false
+        val wm = WgpuRenderer.handle()
+        if (wm == 0L) return false
+        val entry = entries[GlState.boundTexture()] ?: return false
+
+        // The frame's draws may still be sitting in an encoder that has not been submitted, and a copy
+        // taken now would read the texture as it was before them. This is the same reason a blit
+        // flushes first.
+        GlDraws.endFrame(wm)
+
+        if (!WmJni.dumpTextureRgba(wm, entry.texture, READBACK_FILE, true)) return false
+        val file = File(READBACK_FILE)
+        return try {
+            val all = file.readBytes()
+            val payload = all.size - DUMP_HEADER
+            if (payload <= 0) {
+                false
+            } else {
+                val copy = minOf(payload.toLong(), entry.width.toLong() * entry.height * 4L).toInt()
+                MemoryUtil.memByteBuffer(pixels, copy).put(all, DUMP_HEADER, copy)
+                true
+            }
+        } catch (e: IOException) {
+            WgpuMcMod.LOGGER.warn("wgpu-mc: could not read a texture back for a screenshot: {}", e.message)
+            false
+        } finally {
+            file.delete()
         }
     }
 
