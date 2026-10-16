@@ -1724,9 +1724,60 @@ So writes are ordered against the recording now, by offset. Every write into a b
 per-buffer mark, and a submission forgets every mark; a write *above* the mark goes into bytes nothing
 has read yet - Minecraft's ring buffers, one fresh slice per write - and travels with the frame, while
 a write *at or below* it may be rewriting something in flight and submits what has been recorded
-first. Texture writes submit first every time: they name a mip, a layer and a rectangle rather than an
-offset, so there is nothing to compare against, and a re-upload mid-frame is rare enough (a resource
-load, a skin, a font) for that to cost nothing.
+first. Texture writes named a mip, a layer and a rectangle rather than an offset, so there was nothing
+to compare against, and they submitted first every time - **on the assumption that a re-upload
+mid-frame is rare enough (a resource load, a skin, a font) to cost nothing. On 1.21.1 it is the
+opposite of rare, and that assumption is where the leak below came from.** They go through the staging
+ring like everything else now.
+
+### The leak the texture uploads were
+
+The symptom was memory that only ever went up: private bytes climbing to 8.7-11 GB over a couple of
+minutes in a world and never coming back, while every counter this renderer has stayed flat - `51
+textures (55 MB)`, `141 buffers (6 MB)`, `0 quarantined`, `0 created`, `0 released`. Nothing was
+leaking in the sense those counters mean. What was growing was **submissions**, and the counters
+cannot see a submission because a submission is not a resource this side owns.
+
+Attributing it took counting the flush sites rather than reading them. `flush_shared_encoder` had five
+callers and the report named each of them, which is the only reason the answer was findable at all -
+five sites looked equally likely and the number could not tell them apart:
+
+```
+wgpu-mc: render stats: ... 32310 submissions for 300 presented frame(s)
+         [write-texture x32010, blit-to-window x300]
+```
+
+**32,010 texture uploads over 300 frames, 107 a frame, against a design of one.** The count is not
+what costs: each submission is a command buffer and a fence, and both stay alive until they are
+polled, so 108 of them a frame is 108 allocations a frame that outlive the frame. That is the whole
+of the leak, and it explains why every `live resources` line was flat while the process grew - the
+allocations were in the driver and the engine's submission bookkeeping, neither of which is a
+`wgpu::Texture` or a `wgpu::Buffer`.
+
+The fix is the one this section already named as the work left for the uniform writes, applied to
+textures: the rows are re-laid into the staging ring at the 256-byte stride `copy_buffer_to_texture`
+wants, and the copy is recorded into the shared encoder as a command. That is the ordering the forced
+submit was imitating - the copy lands after whatever was recorded before it and before whatever comes
+after it - without the submission. The forced submit survives as the fallback for a ring that cannot
+take the bytes, and counted 32 of those while a world was loading and none after.
+
+Measured, one run, the world loaded and then left alone for two minutes:
+
+| | before | after |
+|---|---|---|
+| submissions a frame | 107.7 | **1.0** |
+| private memory | climbing to 8.7-11 GB | **flat at 4.2 GB from t=60 s, lower at the end than in the middle** |
+
+The same mistake was in the 1.21.1 seam in Kotlin, where the fix is the same in a different place: a
+clear and a framebuffer-to-framebuffer copy each built an encoder of their own and submitted it,
+rather than recording into the frame's. An encoder *is* a command stream, so a copy recorded into the
+frame's own is ordered after the draws that wrote its source by construction - which is the whole of
+what the separate encoder was bought for - and it costs no submission. `GlDraws.frameEncoder` hands
+the frame's encoder to both.
+
+**The general shape, because it will happen again: an assumption about how often the game does
+something is a measurement, and this file is where the wrong ones are found.** "Rare enough to cost
+nothing" was true of a resource load and false of a frame, and the difference was 107 submissions.
 
 The result is one submission a frame plus one for each in-place uniform rewrite, which the render
 stats line says out loud:
