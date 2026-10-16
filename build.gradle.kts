@@ -352,7 +352,17 @@ tasks.matching { it.name.startsWith("run") }.configureEach {
 			// property is the shape that cannot be left lying in a directory the way a marker file
 			// can. It goes through Gradle as `-Pwgpu_mc_no_gl_window`, and so reaches the game by the
 			// one route that does not need the launcher to cooperate.
-			val noGlWindow = project.providers.gradleProperty("wgpu_mc_no_gl_window").getOrElse("false")
+			//
+			// **It defaults to on, and a run that omits it used to crash while "Initializing game".**
+			// Off is not a mode this renderer runs in: the window keeps its GL context, `WindowMixin`
+			// therefore never creates the renderer early, and `Minecraft`'s own constructor then
+			// reaches the seam - `LevelRenderer.createStars` uploads a vertex buffer from line 568 -
+			// before the native library is loaded. That ended in
+			// `UnsatisfiedLinkError: 'long dev.birb.wgpu.rust.WmJni.createBuffer(long,
+			// java.lang.String, int, long)'`. The window has to be `GLFW_NO_API` before a wgpu surface
+			// can exist on it at all, so on is the only value that draws anything; the property stays
+			// so that a bisect of the seam itself can still ask for the other one.
+			val noGlWindow = project.providers.gradleProperty("wgpu_mc_no_gl_window").getOrElse("true")
 
 			// Native memory tracking, for the one question no counter in this renderer can answer: a
 			// run whose private bytes climb while every `live resources` number stays flat is growing

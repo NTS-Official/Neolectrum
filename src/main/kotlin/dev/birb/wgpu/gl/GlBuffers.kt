@@ -219,6 +219,19 @@ object GlBuffers {
 
 		val wm = WgpuRenderer.handle()
 
+		// **No renderer yet means no engine buffer, and it is a state rather than a race.**
+		// `LevelRenderer` uploads its star buffer from `Minecraft`'s own constructor, and the native
+		// renderer is created by work the client setup event queues for *after* that constructor - so
+		// vanilla uploads into this seam before there is anything behind it, and before the native
+		// library is loaded at all. Reaching JNI there is `UnsatisfiedLinkError: 'long
+		// dev.birb.wgpu.rust.WmJni.createBuffer(long, java.lang.String, int, long)'`, reported as a
+		// crash during "Initializing game". The store is simply not made; every buffer the renderer
+		// actually draws out of is uploaded after it exists.
+		if (wm == 0L) {
+			entry.size = size
+			return
+		}
+
 		// **A store that is already big enough is kept, not replaced.** GL reads `glBufferData` as
 		// orphaning the old store, but the *name* keeps its identity, and Minecraft calls it again and
 		// again on one name: the immediate-mode buffers it uploads each GUI batch into, the terrain
